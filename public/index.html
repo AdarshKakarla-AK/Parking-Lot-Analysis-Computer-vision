@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ParkPulse · AI Parking Lot Revenue Estimator</title>
+  <meta name="description" content="Count the cars in your parking lot photos and estimate the day's revenue in seconds." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%230b1220'/%3E%3Ctext x='50' y='70' font-size='60' font-family='Arial' font-weight='bold' text-anchor='middle' fill='%2334e39a'%3EP%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-glow bg-glow--a"></div>
+  <div class="bg-glow bg-glow--b"></div>
+
+  <header class="topbar">
+    <div class="container topbar__inner">
+      <a class="brand" href="#" aria-label="ParkPulse home">
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 17h14M6 17l1.5-5.5A2 2 0 0 1 9.4 10h5.2a2 2 0 0 1 1.9 1.5L18 17"/>
+            <circle cx="7.5" cy="19" r="1.5"/><circle cx="16.5" cy="19" r="1.5"/>
+            <path d="M9 10V7.5A1.5 1.5 0 0 1 10.5 6h3A1.5 1.5 0 0 1 15 7.5V10"/>
+          </svg>
+        </span>
+        <span class="brand__text">
+          <strong>ParkPulse</strong>
+          <em>lot intelligence</em>
+        </span>
+      </a>
+      <div class="topbar__right">
+        <span class="status-pill" id="modelStatus">
+          <span class="dot"></span><span id="modelStatusText">Checking model…</span>
+        </span>
+        <a class="ghost-link" href="#how" >How it works</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <div class="hero__copy">
+        <span class="eyebrow"><span class="eyebrow__spark">✦</span> Computer-vision revenue estimates</span>
+        <h1>Count the cars.<br /><span>Estimate the day.</span></h1>
+        <p>
+          Upload up to five photos of the same parking lot. The detector counts the vehicles in each
+          shot, averages the footfall, and turns it into a rough daily sales estimate for your lot.
+        </p>
+        <div class="hero__chips">
+          <span class="chip">YOLOv10 vision model</span>
+          <span class="chip">Runs locally</span>
+          <span class="chip">No upload to the cloud</span>
+        </div>
+      </div>
+      <div class="hero__art" aria-hidden="true">
+        <div class="lot-card">
+          <div class="lot-card__head">
+            <span class="lot-card__title">Live lot snapshot</span>
+            <span class="lot-card__badge" id="heroBadge">45 cars</span>
+          </div>
+          <div class="lot-grid">
+            <span class="car c1"></span><span class="car c2"></span><span class="car c3"></span>
+            <span class="car c4"></span><span class="car c5"></span><span class="car c6"></span>
+            <span class="car c7"></span><span class="car c8"></span><span class="car c9"></span>
+            <span class="car c10"></span><span class="car c11"></span><span class="car c12"></span>
+            <span class="car c13"></span><span class="car c14"></span><span class="car c15"></span>
+          </div>
+          <div class="lot-card__foot">
+            <span>Occupancy</span>
+            <div class="mini-bar"><i style="width:72%"></i></div>
+            <span>72%</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <!-- Upload -->
+      <article class="card card--upload">
+        <div class="card__head">
+          <div>
+            <span class="step">Step 1</span>
+            <h2>Add photos of the lot</h2>
+          </div>
+          <span class="counter" id="photoCounter">0 / 5</span>
+        </div>
+        <p class="card__hint">
+          Use the same camera angle, spread across the day. More photos = a steadier average.
+        </p>
+
+        <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Add parking lot photos">
+          <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" multiple hidden />
+          <div class="dropzone__empty" id="dropzoneEmpty">
+            <span class="dropzone__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+              </svg>
+            </span>
+            <strong>Drop photos here</strong>
+            <span>or click to browse · JPG / PNG / WebP · max 5</span>
+          </div>
+          <div class="slots" id="slots"></div>
+        </div>
+
+        <div class="upload-actions">
+          <button class="btn btn--ghost" id="browseBtn" type="button">Choose photos</button>
+          <button class="btn btn--ghost" id="sampleBtn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="m8 14 2.5-2.5L13 14l2-2 2.5 2.5"/><circle cx="9" cy="9.5" r=".6" fill="currentColor"/></svg>
+            Try demo lot
+          </button>
+          <button class="btn btn--ghost btn--danger" id="clearBtn" type="button">Clear</button>
+        </div>
+        <p class="privacy-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          Photos are processed on this machine and never leave it.
+        </p>
+      </article>
+
+      <!-- Sales inputs -->
+      <article class="card card--settings">
+        <div class="card__head">
+          <div>
+            <span class="step">Step 2</span>
+            <h2>Set your sales range</h2>
+          </div>
+        </div>
+        <p class="card__hint">
+          What does one parked car bring in, on a low day and a high day? We average the two.
+        </p>
+
+        <div class="field-row">
+          <label class="field">
+            <span class="field__label">Lowest average sale <em>per car</em></span>
+            <span class="money-input">
+              <span class="money-input__prefix" data-currency-symbol>₹</span>
+              <input type="number" id="lowSale" min="0" step="1" inputmode="decimal" value="80" />
+            </span>
+          </label>
+          <label class="field">
+            <span class="field__label">Highest average sale <em>per car</em></span>
+            <span class="money-input">
+              <span class="money-input__prefix" data-currency-symbol>₹</span>
+              <input type="number" id="highSale" min="0" step="1" inputmode="decimal" value="150" />
+            </span>
+          </label>
+        </div>
+
+        <div class="field-row field-row--3">
+          <label class="field">
+            <span class="field__label">Currency</span>
+            <span class="select-wrap">
+              <select id="currency">
+                <option value="INR">INR ₹</option>
+                <option value="USD">USD $</option>
+                <option value="EUR">EUR €</option>
+                <option value="GBP">GBP £</option>
+                <option value="AED">AED د.إ</option>
+                <option value="AUD">AUD A$</option>
+                <option value="CAD">CAD C$</option>
+                <option value="SGD">SGD S$</option>
+              </select>
+            </span>
+          </label>
+          <label class="field">
+            <span class="field__label">Lot capacity <em>optional</em></span>
+            <input type="number" id="capacity" min="1" step="1" inputmode="numeric" placeholder="e.g. 80" />
+          </label>
+          <label class="field">
+            <span class="field__label">Detection mode</span>
+            <span class="select-wrap">
+              <select id="mode">
+                <option value="fast">Fast</option>
+                <option value="balanced" selected>Balanced</option>
+                <option value="accurate">High accuracy</option>
+              </select>
+            </span>
+          </label>
+        </div>
+
+        <div class="avg-sale" id="avgSaleCard">
+          <span class="avg-sale__label">Average sale per car</span>
+          <strong class="avg-sale__value" id="avgSaleValue">₹115</strong>
+          <span class="avg-sale__calc" id="avgSaleCalc">(₹80 + ₹150) ÷ 2</span>
+        </div>
+
+        <div class="analyze-row">
+          <button class="btn btn--primary" id="analyzeBtn" type="button" disabled>
+            <span class="btn__label">Analyze parking lot</span>
+            <span class="btn__spinner" aria-hidden="true"></span>
+          </button>
+          <span class="analyze-note" id="analyzeNote">Add at least one photo to begin.</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- Results -->
+    <section class="results" id="results" hidden>
+      <div class="results__head">
+        <div>
+          <span class="step">Report</span>
+          <h2>Your lot at a glance</h2>
+        </div>
+        <div class="report-meta" id="reportMeta"></div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi">
+          <span class="kpi__label">Cars counted</span>
+          <strong class="kpi__value" id="kpiTotal">–</strong>
+          <span class="kpi__sub" id="kpiTotalSub">across 5 photos</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Average footfall</span>
+          <strong class="kpi__value" id="kpiAvg">–</strong>
+          <span class="kpi__sub">cars per photo</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Occupancy</span>
+          <strong class="kpi__value" id="kpiOcc">–</strong>
+          <span class="kpi__sub" id="kpiOccSub">add lot capacity</span>
+        </div>
+        <div class="kpi kpi--money">
+          <span class="kpi__label">Estimated day's sales</span>
+          <strong class="kpi__value" id="kpiSales">–</strong>
+          <span class="kpi__sub" id="kpiSalesSub">based on average footfall</span>
+        </div>
+      </div>
+
+      <div class="results-grid">
+        <div class="card card--formula">
+          <div class="card__head">
+            <div>
+              <span class="step">The math</span>
+              <h3>How we got there</h3>
+            </div>
+          </div>
+          <div class="formula" id="formula"></div>
+          <div class="range">
+            <div class="range__head">
+              <span>Conservative</span><span>Expected</span><span>Optimistic</span>
+            </div>
+            <div class="range__track">
+              <span class="range__fill" id="rangeFill"></span>
+              <span class="range__marker" id="rangeMarker"></span>
+            </div>
+            <div class="range__values">
+              <span id="rangeLow">–</span><span id="rangeMid">–</span><span id="rangeHigh">–</span>
+            </div>
+          </div>
+          <div class="projections">
+            <div><span>Per week</span><strong id="projWeek">–</strong></div>
+            <div><span>Per 30 days</span><strong id="projMonth">–</strong></div>
+            <div><span>Per car</span><strong id="projPhoto">–</strong></div>
+          </div>
+          <p class="disclaimer" id="disclaimer"></p>
+        </div>
+
+        <div class="card card--breakdown">
+          <div class="card__head">
+            <div>
+              <span class="step">Photos</span>
+              <h3>Counts per photo</h3>
+            </div>
+            <span class="counter" id="breakdownCount"></span>
+          </div>
+          <div class="bars" id="bars"></div>
+          <div class="breakdown-note">
+            <span class="breakdown-note__dot"></span>
+            Average is weighted equally across every photo, not by lot size.
+          </div>
+        </div>
+      </div>
+
+      <div class="card card--gallery">
+        <div class="card__head">
+          <div>
+            <span class="step">Proof</span>
+            <h3>What the model saw</h3>
+          </div>
+          <span class="counter" id="galleryMeta"></span>
+        </div>
+        <div class="gallery" id="gallery"></div>
+      </div>
+    </section>
+
+    <section class="how" id="how">
+      <h2>Three numbers, one estimate</h2>
+      <div class="how-grid">
+        <div class="how-card">
+          <span class="how-card__num">01</span>
+          <h3>Detect</h3>
+          <p>A YOLOv10 model scans each photo and boxes every car, truck, bus and motorcycle it finds.</p>
+        </div>
+        <div class="how-card">
+          <span class="how-card__num">02</span>
+          <h3>Average</h3>
+          <p>Counts from up to five photos are averaged, giving you a stable footfall figure instead of a one-shot guess.</p>
+        </div>
+        <div class="how-card">
+          <span class="how-card__num">03</span>
+          <h3>Multiply</h3>
+          <p>Average footfall × the midpoint of your low and high sale per car = a rough estimate of the day's revenue.</p>
+        </div>
+      </div>
+      <p class="how__foot">
+        Rough analysis only. It does not model dwell time, hourly turnover, seasonality, or vehicles that
+        park for free. Use it as a directional signal, not accounting.
+      </p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <span>ParkPulse · parking-lot revenue estimator</span>
+      <span>Powered by YOLOv10n · runs on localhost</span>
+    </div>
+  </footer>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button class="lightbox__close" id="lightboxClose" aria-label="Close">×</button>
+    <img id="lightboxImg" alt="Annotated parking lot" />
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
