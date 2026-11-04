@@ -10,8 +10,7 @@
     if (!loadPromise) {
       loadPromise = (async () => {
         try {
-          const tf = await import('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.18.0/dist/tf-core.min.js');
-          await import('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+          await tf.setBackend('webgl');
           const cocoSsd = window.cocoSsd;
           if (!cocoSsd) throw new Error('coco-ssd failed to load');
           model = await cocoSsd.load();
