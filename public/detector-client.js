@@ -6,20 +6,43 @@
   const CLASS_NAMES = { 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck' };
 
   let session = null;
-  let loading = null;
+  let loadPromise = null;
+
+  function loadOrtScript() {
+    return new Promise((resolve, reject) => {
+      if (window.ort && window.ort.InferenceSession) return resolve(window.ort);
+      const existing = document.querySelector('script[src*="onnxruntime-web"]');
+      if (existing) {
+        existing.onload = () => resolve(window.ort);
+        existing.onerror = () => reject(new Error('Failed to load onnxruntime-web'));
+        return;
+      }
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js';
+      s.onload = () => {
+        if (!window.ort || !window.ort.InferenceSession) {
+          reject(new Error('onnxruntime-web loaded but InferenceSession is missing'));
+          return;
+        }
+        resolve(window.ort);
+      };
+      s.onerror = () => reject(new Error('Failed to load onnxruntime-web from CDN'));
+      document.head.appendChild(s);
+    });
+  }
 
   async function loadSession() {
     if (session) return session;
-    if (!loading) {
-      loading = (async () => {
-        const ort = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js');
-        session = await ort.InferenceSession.create(MODEL_URL, {
+    if (!loadPromise) {
+      loadPromise = (async () => {
+        await loadOrtScript();
+        session = await window.ort.InferenceSession.create(MODEL_URL, {
           executionProviders: ['webgl', 'wasm'],
         });
         return session;
       })();
     }
-    return loading;
+    return loadPromise;
   }
 
   async function toTensor(file, size = INPUT_SIZE) {
@@ -73,9 +96,9 @@
     return keep;
   }
 
-  async function runOnTensor(t, conf, origW, origH, padX, padY, scale) {
+  async function runOnTensor(t, conf) {
     const s = await loadSession();
-    const input = new ort.Tensor('float32', t.tensor, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+    const input = new window.ort.Tensor('float32', t.tensor, [1, 3, INPUT_SIZE, INPUT_SIZE]);
     const out = await s.run({ images: input });
     const raw = out.output0.data; // [1, 300, 6]
     const boxes = [];
@@ -97,7 +120,7 @@
   async function detect(bufferOrFile, { conf = 0.12, mode = 'full' } = {}) {
     const file = bufferOrFile instanceof File ? bufferOrFile : new File([bufferOrFile], 'img.jpg', { type: 'image/jpeg' });
     const t = await toTensor(file);
-    const result = await runOnTensor(t, conf, t.width, t.height, t.padX, t.padY, t.scale);
+    const result = await runOnTensor(t, conf);
     return {
       count: result.boxes.length,
       boxes: result.boxes.map(b => ({ x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h), score: Math.round(b.score * 100) / 100, cls: b.cls, name: b.name })),
