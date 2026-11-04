@@ -266,7 +266,7 @@
 
   /** Client-side detection via ONNX Runtime Web (no backend needed). */
   async function clientAnalyze() {
-    const modeMap = { fast: { conf: 0.12, mode: 'fast' }, balanced: { conf: 0.12, mode: 'full' }, accurate: { conf: 0.08, mode: 'accurate' } };
+    const modeMap = { fast: { conf: 0.45, mode: 'fast' }, balanced: { conf: 0.4, mode: 'full' }, accurate: { conf: 0.35, mode: 'accurate' } };
     const params = modeMap[els.mode.value] || modeMap.balanced;
     const results = [];
     for (let i = 0; i < slots.length; i++) {
