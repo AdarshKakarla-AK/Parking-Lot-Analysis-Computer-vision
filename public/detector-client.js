@@ -36,7 +36,9 @@
     if (!loadPromise) {
       loadPromise = (async () => {
         await loadOrtScript();
-        session = await window.ort.InferenceSession.create(MODEL_URL, {
+        const res = await fetch(MODEL_URL);
+        const buf = await res.arrayBuffer();
+        session = await window.ort.InferenceSession.create(buf, {
           executionProviders: ['webgl', 'wasm'],
         });
         return session;
