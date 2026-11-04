@@ -1,6 +1,6 @@
 /* ParkPulse client-side detector (ONNX Runtime Web) — runs in the browser. */
 (() => {
-  const MODEL_URL = '/models/yolov10n.onnx';
+  const MODEL_URL = 'https://cdn.jsdelivr.net/gh/AdarshKakarla-AK/Parking-Lot-Analysis-Computer-vision@main/public/models/yolov10n.onnx';
   const INPUT_SIZE = 640;
   const VEHICLE_CLASSES = new Set([2, 3, 5, 7]); // car, motorcycle, bus, truck
   const CLASS_NAMES = { 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck' };
