@@ -7,8 +7,9 @@
 
   let session = null;
   let loadPromise = null;
+  let lastError = null;
 
-  function loadOrtScript() {
+  async function loadOrtScript() {
     return new Promise((resolve, reject) => {
       if (window.ort && window.ort.InferenceSession) return resolve(window.ort);
       const existing = document.querySelector('script[src*="onnxruntime-web"]');
@@ -18,7 +19,7 @@
         return;
       }
       const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js';
+      s.src = 'https://unpkg.com/onnxruntime-web@1.17.0/dist/ort.min.js';
       s.onload = () => {
         if (!window.ort || !window.ort.InferenceSession) {
           reject(new Error('onnxruntime-web loaded but InferenceSession is missing'));
@@ -35,13 +36,20 @@
     if (session) return session;
     if (!loadPromise) {
       loadPromise = (async () => {
-        await loadOrtScript();
-        const res = await fetch(MODEL_URL);
-        const buf = await res.arrayBuffer();
-        session = await window.ort.InferenceSession.create(buf, {
-          executionProviders: ['webgl', 'wasm'],
-        });
-        return session;
+        try {
+          await loadOrtScript();
+          const res = await fetch(MODEL_URL);
+          if (!res.ok) throw new Error(`Model fetch failed: ${res.status} ${res.statusText}`);
+          const buf = await res.arrayBuffer();
+          if (!buf || buf.byteLength === 0) throw new Error('Model buffer is empty');
+          session = await window.ort.InferenceSession.create(buf, {
+            executionProviders: ['webgl', 'wasm'],
+          });
+          return session;
+        } catch (e) {
+          lastError = e;
+          throw e;
+        }
       })();
     }
     return loadPromise;
@@ -102,7 +110,7 @@
     const s = await loadSession();
     const input = new window.ort.Tensor('float32', t.tensor, [1, 3, INPUT_SIZE, INPUT_SIZE]);
     const out = await s.run({ images: input });
-    const raw = out.output0.data; // [1, 300, 6]
+    const raw = out.output0.data;
     const boxes = [];
     for (let i = 0; i < 300; i++) {
       const o = i * 6;
@@ -148,5 +156,5 @@
     return { ...result, thumb: canvas.toDataURL('image/jpeg', 0.8) };
   }
 
-  window.ParkPulseDetector = { detect, detectAnnotated, loadSession };
+  window.ParkPulseDetector = { detect, detectAnnotated, loadSession, lastError };
 })();

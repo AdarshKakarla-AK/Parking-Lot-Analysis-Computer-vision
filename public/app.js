@@ -321,7 +321,8 @@
         const data = await clientAnalyze();
         analysis = data;
       } catch (clientErr) {
-        toast(clientErr.message || 'Client detection failed. Did the model load?');
+        const detail = ParkPulseDetector.lastError?.message || clientErr.message || 'Client detection failed.';
+        toast(detail);
         resetAnalysis();
         els.analyzeBtn.classList.remove('is-loading');
         setAnalyzing(false);
