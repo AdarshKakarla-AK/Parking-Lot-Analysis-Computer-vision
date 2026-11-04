@@ -249,38 +249,96 @@
 
   /* ---------------- analysis request ---------------- */
 
+  /** Normalize backend or client result into the same shape the UI expects. */
+  function normalizeResult(img, i) {
+    return {
+      name: img.name || `Photo ${i + 1}`,
+      count: img.count,
+      width: img.width,
+      height: img.height,
+      boxes: img.boxes || [],
+      avgConfidence: img.avgConfidence != null ? img.avgConfidence : 0,
+      inferenceMs: img.inferenceMs || 0,
+      thumb: img.thumb,
+      mode: img.mode || 'client',
+    };
+  }
+
+  /** Client-side detection via ONNX Runtime Web (no backend needed). */
+  async function clientAnalyze() {
+    const modeMap = { fast: { conf: 0.12, mode: 'fast' }, balanced: { conf: 0.12, mode: 'full' }, accurate: { conf: 0.08, mode: 'accurate' } };
+    const params = modeMap[els.mode.value] || modeMap.balanced;
+    const results = [];
+    for (let i = 0; i < slots.length; i++) {
+      const res = await ParkPulseDetector.detectAnnotated(slots[i].file, params);
+      results.push(normalizeResult(res, i));
+      slots[i].result = results[i];
+      renderSlots();
+    }
+    return { ok: true, images: results, summary: buildSummary(results), mode: params.mode, confidenceThreshold: params.conf };
+  }
+
+  function buildSummary(images) {
+    const counts = images.map((r) => r.count);
+    const total = counts.reduce((a, b) => a + b, 0);
+    const average = total / counts.length;
+    const sorted = [...counts].sort((a, b) => a - b);
+    const median = sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+    return {
+      photos: images.length, total,
+      average: Math.round(average * 10) / 10,
+      median, min: sorted[0], max: sorted[sorted.length - 1],
+      mode: images[0]?.mode || 'client', confidenceThreshold: images[0]?.avgConfidence ? 0.12 : 0.12,
+    };
+  }
+
   async function analyze() {
     if (analyzing || !slots.length) return;
     setAnalyzing(true);
     els.analyzeBtn.classList.add('is-loading');
     els.slots.querySelectorAll('.slot').forEach((s) => s.classList.add('is-loading'));
 
+    let usedBackend = false;
     try {
-      const fd = new FormData();
-      slots.forEach((s) => fd.append('images', s.file, s.file.name));
-      fd.append('mode', els.mode.value);
-
-      const res = await fetch('/api/analyze', { method: 'POST', body: fd });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) throw new Error(data.error || `Analysis failed (${res.status}).`);
-
-      data.images.forEach((img, i) => {
-        if (slots[i]) slots[i].result = img;
-      });
-      analysis = data;
-      renderSlots();
-      renderResults();
-      els.results.hidden = false;
-      updateAnalyzeNote();
-      requestAnimationFrame(() => els.results.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-    } catch (err) {
-      toast(err.message || 'Could not analyze the photos.');
-      resetAnalysis();
-    } finally {
-      els.analyzeBtn.classList.remove('is-loading');
-      setAnalyzing(false);
-      els.slots.querySelectorAll('.slot').forEach((s) => s.classList.remove('is-loading'));
+      // 1) Try a backend first (local dev). Falls through to client on 404 / offline (Cloudflare Pages).
+      const health = await fetch('/api/health', { method: 'GET', signal: AbortSignal.timeout(2500) }).catch(() => null);
+      if (health && health.ok) {
+        const fd = new FormData();
+        slots.forEach((s) => fd.append('images', s.file, s.file.name));
+        fd.append('mode', els.mode.value);
+        const res = await fetch('/api/analyze', { method: 'POST', body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) throw new Error(data.error || `Analysis failed (${res.status}).`);
+        data.images.forEach((img, i) => { if (slots[i]) slots[i].result = normalizeResult(img, i); });
+        usedBackend = true;
+        analysis = data;
+      } else {
+        throw new Error('no backend');
+      }
+    } catch (backendErr) {
+      // 2) Client-side fallback (works on Cloudflare Pages / static hosting).
+      try {
+        const data = await clientAnalyze();
+        analysis = data;
+      } catch (clientErr) {
+        toast(clientErr.message || 'Client detection failed. Did the model load?');
+        resetAnalysis();
+        els.analyzeBtn.classList.remove('is-loading');
+        setAnalyzing(false);
+        els.slots.querySelectorAll('.slot').forEach((s) => s.classList.remove('is-loading'));
+        return;
+      }
     }
+
+    renderSlots();
+    renderResults();
+    els.results.hidden = false;
+    updateAnalyzeNote();
+    requestAnimationFrame(() => els.results.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    els.analyzeBtn.classList.remove('is-loading');
+    setAnalyzing(false);
+    els.slots.querySelectorAll('.slot').forEach((s) => s.classList.remove('is-loading'));
+    if (!usedBackend) toast('Running client-side detection (no backend).', 'info');
   }
 
   /* ---------------- results ---------------- */
@@ -495,14 +553,14 @@
   renderSlots();
   updateAnalyzeNote();
 
-  fetch('/api/health')
+  fetch('/api/health', { signal: AbortSignal.timeout(2500) })
     .then((r) => r.json())
     .then((data) => {
       els.modelStatus.classList.add(data.ok ? 'is-ok' : 'is-err');
-      els.modelStatusText.textContent = data.ok ? 'Vision model ready' : 'Model offline';
+      els.modelStatusText.textContent = data.ok ? 'Backend + vision model ready' : 'Model offline';
     })
     .catch(() => {
-      els.modelStatus.classList.add('is-err');
-      els.modelStatusText.textContent = 'Server offline';
+      els.modelStatus.classList.add('is-ok');
+      els.modelStatusText.textContent = 'Client-side detection ready';
     });
 })();
