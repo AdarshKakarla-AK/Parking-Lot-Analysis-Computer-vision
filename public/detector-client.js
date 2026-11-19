@@ -1,4 +1,4 @@
-/* ParkPulse client-side detector (TensorFlow.js + COCO-SSD) — runs in the browser. */
+/* ParkPulse client-side detector (TensorFlow.js + COCO-SSD with tiling) — runs in the browser. */
 (() => {
   const VEHICLE_CLASSES = new Set(['car', 'motorcycle', 'bus', 'truck']);
   let model = null;
@@ -41,38 +41,91 @@
     return union <= 0 ? 0 : inter / union;
   }
 
-  function nms(boxes, th = 0.45) {
+  function nms(boxes, th = 0.4) {
     const s = [...boxes].sort((a, b) => b.score - a.score), keep = [];
     for (const b of s) if (!keep.some(k => iou(k, b) > th)) keep.push(b);
     return keep;
   }
 
-  async function detect(bufferOrFile, { conf = 0.4, mode = 'balanced' } = {}) {
+  /** Detect vehicles in a single image with 2x2 tiling for small/distant cars. */
+  async function detect(bufferOrFile, { conf = 0.3, mode = 'balanced' } = {}) {
     const m = await loadModel();
     const file = bufferOrFile instanceof File ? bufferOrFile : new File([bufferOrFile], 'img.jpg', { type: 'image/jpeg' });
     const img = await loadImage(file);
-    const predictions = await m.detect(img);
-    const boxes = predictions
-      .filter(p => VEHICLE_CLASSES.has(p.class) && p.score >= conf)
-      .map(p => ({
-        x: Math.max(0, p.bbox[0]),
-        y: Math.max(0, p.bbox[1]),
-        w: Math.max(0, p.bbox[2]),
-        h: Math.max(0, p.bbox[3]),
-        score: Math.round(p.score * 100) / 100,
-        cls: 2,
-        name: p.class,
-      }));
+    const W = img.width, H = img.height;
+
+    const allBoxes = [];
+
+    // Helper: run coco-ssd on an img element and collect vehicle boxes.
+    async function detectOnImg(srcImg) {
+      const preds = await m.detect(srcImg);
+      for (const p of preds) {
+        if (!VEHICLE_CLASSES.has(p.class) || p.score < conf) continue;
+        allBoxes.push({
+          x: Math.max(0, p.bbox[0]),
+          y: Math.max(0, p.bbox[1]),
+          w: Math.max(0, p.bbox[2]),
+          h: Math.max(0, p.bbox[3]),
+          score: p.score,
+          name: p.class,
+        });
+      }
+    }
+
+    // Full-image pass first.
+    await detectOnImg(img);
+
+    // 2x2 tiling for better recall on small cars.
+    const tileW = Math.round(W / 1.5);
+    const tileH = Math.round(H / 1.5);
+    const xs = [0, Math.max(0, W - tileW)];
+    const ys = [0, Math.max(0, H - tileH)];
+
+    for (const ty of ys) {
+      for (const tx of xs) {
+        const tw = Math.min(tileW, W - tx);
+        const th = Math.min(tileH, H - ty);
+        const canvas = document.createElement('canvas');
+        canvas.width = tw; canvas.height = th;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, tx, ty, tw, th, 0, 0, tw, th);
+        const preds = await m.detect(canvas);
+        for (const p of preds) {
+          if (!VEHICLE_CLASSES.has(p.class) || p.score < conf) continue;
+          allBoxes.push({
+            x: tx + Math.max(0, p.bbox[0]),
+            y: ty + Math.max(0, p.bbox[1]),
+            w: Math.max(0, p.bbox[2]),
+            h: Math.max(0, p.bbox[3]),
+            score: p.score,
+            name: p.class,
+          });
+        }
+      }
+    }
+
+    const merged = nms(allBoxes);
+    // Cap boxes inside image bounds.
+    const boxes = merged.map(b => ({
+      x: Math.max(0, Math.min(b.x, W - 1)),
+      y: Math.max(0, Math.min(b.y, H - 1)),
+      w: Math.max(1, Math.min(b.w, W - Math.max(0, Math.min(b.x, W - 1)))),
+      h: Math.max(1, Math.min(b.h, H - Math.max(0, Math.min(b.y, H - 1)))),
+      score: Math.round(b.score * 100) / 100,
+      cls: 2,
+      name: b.name,
+    }));
+
     return {
       count: boxes.length,
-      boxes: nms(boxes),
-      width: img.width,
-      height: img.height,
-      mode: 'coco-ssd',
+      boxes,
+      width: W,
+      height: H,
+      mode: 'coco-ssd-tiles',
     };
   }
 
-  async function detectAnnotated(file, { conf = 0.4, mode = 'balanced' } = {}) {
+  async function detectAnnotated(file, { conf = 0.3, mode = 'balanced' } = {}) {
     const result = await detect(file, { conf, mode });
     const img = await loadImage(file);
     const canvas = document.createElement('canvas');
